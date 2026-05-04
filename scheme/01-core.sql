@@ -43,11 +43,11 @@ create type source_kind as enum (
 
 create table app_user
 (
-    id            uuid primary key     default gen_random_uuid(),
-    username      varchar(50) not null unique,
-    is_verified   boolean     not null default false,
-    created_at    timestamptz not null default now(),
-    updated_at    timestamptz not null default now()
+    id          uuid primary key     default gen_random_uuid(),
+    username    varchar(50) not null unique,
+    is_verified boolean     not null default false,
+    created_at  timestamptz not null default now(),
+    updated_at  timestamptz not null default now()
 );
 
 -- ---------------------------------------------------------------------------
@@ -282,13 +282,16 @@ begin
         end;
 
     next_error_type = case
-                          when new.status = 'failed' then coalesce(new.payload ->> 'error_type', next_error_type)
+
+                          when new.status = 'failed' then next_error_type
+
                           else null
         end;
 
     next_error_message = case
-                             when new.status = 'failed' then coalesce(new.message, new.payload ->> 'error_message',
-                                                                      next_error_message)
+
+                             when new.status = 'failed' then coalesce(new.message, next_error_message)
+
                              else null
         end;
 
