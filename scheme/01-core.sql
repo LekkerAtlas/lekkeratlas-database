@@ -45,8 +45,6 @@ create table app_user
 (
     id            uuid primary key     default gen_random_uuid(),
     username      varchar(50) not null unique,
-    email         varchar(320) unique,
-    password_hash varchar     not null,
     is_verified   boolean     not null default false,
     created_at    timestamptz not null default now(),
     updated_at    timestamptz not null default now()
