@@ -259,7 +259,7 @@ begin
             using errcode = '23503';
     end if;
 
-    if current_status in ('completed', 'failed', 'cancelled')
+    if current_status in ('completed', 'failed', 'canceled')
         and new.status <> current_status then
         raise exception 'cannot change terminal queue_job % from % to %',
             new.job_id,
@@ -270,13 +270,13 @@ begin
 
     next_started_at = case
                           when new.status = 'running' and next_started_at is null then new.created_at
-                          when new.status in ('completed', 'failed', 'cancelled') and next_started_at is null
+                          when new.status in ('completed', 'failed', 'canceled') and next_started_at is null
                               then new.created_at
                           else next_started_at
         end;
 
     next_finished_at = case
-                           when new.status in ('completed', 'failed', 'cancelled') and next_finished_at is null
+                           when new.status in ('completed', 'failed', 'canceled') and next_finished_at is null
                                then new.created_at
                            else next_finished_at
         end;
@@ -297,7 +297,7 @@ begin
             using errcode = '23514';
     end if;
 
-    if new.status in ('completed', 'failed', 'cancelled') and next_finished_at is null then
+    if new.status in ('completed', 'failed', 'canceled') and next_finished_at is null then
         raise exception 'queue_job % cannot be % without finished_at', new.job_id, new.status
             using errcode = '23514';
     end if;
