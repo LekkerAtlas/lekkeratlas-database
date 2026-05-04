@@ -89,7 +89,7 @@ create table content_video_platform
     constraint content_video_platform_kind_check check (platform_kind = 'video'),
     unique (id, source_kind),
     unique (id, platform_kind),
-    foreign key (id, platform_kind) references content_platform (id, kind) on delete cascade
+    foreign key (id, platform_kind) references content_platform (id, platform_kind) on delete cascade
 );
 
 create table youtube_channel
