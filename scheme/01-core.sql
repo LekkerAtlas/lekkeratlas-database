@@ -41,13 +41,17 @@ create type source_kind as enum (
 -- Users
 -- ---------------------------------------------------------------------------
 
+-- Map athentik user to local class https://api.goauthentik.io/reference/core-users-list/
 create table app_user
 (
-    id          uuid primary key     default gen_random_uuid(),
-    username    varchar(50) not null unique,
-    is_verified boolean     not null default false,
-    created_at  timestamptz not null default now(),
-    updated_at  timestamptz not null default now()
+    id           uuid primary key      default gen_random_uuid(),
+    username     varchar(150) not null unique, -- mirrors the authentik max username lenght
+    email        varchar      not null unique,
+    display_name varchar      not null,
+    is_verified  boolean      not null default false,
+    date_joined  timestamptz  not null default now(),
+    last_updated timestamptz  not null default now(),
+    last_login   timestamptz  not null default now()
 );
 
 -- ---------------------------------------------------------------------------
