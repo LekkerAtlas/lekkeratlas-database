@@ -177,7 +177,7 @@ create index idx_queue_job_correlation_key
 
 create table queue_job_event
 (
-    id         bigserial primary key,
+    id         uuid primary key     default gen_random_uuid(),
     job_id     uuid        not null references queue_job (id) on delete cascade,
     status     queue_job_status,
     message    text,
