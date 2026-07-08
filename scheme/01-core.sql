@@ -75,11 +75,10 @@ create table content_platform
     id                             uuid primary key               default gen_random_uuid(),
     platform_kind                  content_platform_kind not null,
     display_name                   varchar               not null,
---     base_url                       varchar,
---     image_url                      varchar,
     fetch_new_content_is_automated boolean               not null default false,
     added_by_user_id               uuid                  references app_user (id) on delete set null,
     created_at                     timestamptz           not null default now(),
+constraint content_platform_id_platform_kind_key
     unique (id, platform_kind)
 );
 
@@ -89,7 +88,9 @@ create table content_video_platform
     platform_kind content_platform_kind not null default 'video',
     source_kind   source_kind           not null,
     constraint content_video_platform_kind_check check (platform_kind = 'video'),
+constraint content_video_platform_id_source_kind_key
     unique (id, source_kind),
+constraint content_video_platform_id_platform_kind_key
     unique (id, platform_kind),
     foreign key (id, platform_kind) references content_platform (id, platform_kind) on delete cascade
 );
@@ -100,6 +101,7 @@ create table youtube_channel
     source_kind        source_kind not null default 'youtube_channel',
     youtube_channel_id varchar     not null unique,
     constraint youtube_channel_source_kind_check check (source_kind = 'youtube_channel'),
+constraint youtube_channel_id_source_kind_key
     unique (id, source_kind),
     foreign key (id, source_kind) references content_video_platform (id, source_kind) on delete cascade
 );
@@ -111,7 +113,9 @@ create table hosted_content
     content_platform_id uuid    not null references content_platform (id) on delete cascade,
     external_content_id varchar not null,
 --     url                 varchar     not null,
+constraint hosted_content_content_id_content_platform_id_key
     unique (content_id, content_platform_id),
+constraint hosted_content_content_platform_id_external_content_id_key
     unique (content_platform_id, external_content_id)
 --     unique (url)
 );

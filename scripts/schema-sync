@@ -1,0 +1,60 @@
+#!/bin/sh
+
+set -eu
+
+ACTION="${1:-diff}"
+
+if [ "$#" -gt 0 ]; then
+  shift
+fi
+
+DATABASE_NAME="${POSTGRES_DB:-postgres}"
+DATABASE_USER="${POSTGRES_USER:-postgres}"
+SCHEMA_FILE="${SCHEMA_FILE:-/docker-entrypoint-initdb.d/01-core.sql}"
+
+export PGPASSWORD="${POSTGRES_PASSWORD:-}"
+
+case "$ACTION" in
+diff | dry-run)
+  exec psqldef \
+    --host=127.0.0.1 \
+    --user="$DATABASE_USER" \
+    "$DATABASE_NAME" \
+    --file="$SCHEMA_FILE" \
+    --dry-run \
+    "$@"
+  ;;
+
+check)
+  exec psqldef \
+    --host=127.0.0.1 \
+    --user="$DATABASE_USER" \
+    "$DATABASE_NAME" \
+    --file="$SCHEMA_FILE" \
+    --check \
+    "$@"
+  ;;
+
+apply)
+  exec psqldef \
+    --host=127.0.0.1 \
+    --user="$DATABASE_USER" \
+    "$DATABASE_NAME" \
+    --file="$SCHEMA_FILE" \
+    --apply \
+    "$@"
+  ;;
+
+export)
+  exec psqldef \
+    --host=127.0.0.1 \
+    --user="$DATABASE_USER" \
+    "$DATABASE_NAME" \
+    --export
+  ;;
+
+*)
+  echo "Usage: schema-sync {diff|check|apply|export} [psqldef options]" >&2
+  exit 1
+  ;;
+esac
