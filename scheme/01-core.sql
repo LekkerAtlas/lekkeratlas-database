@@ -75,8 +75,6 @@ create table content_platform
     id                             uuid primary key               default gen_random_uuid(),
     platform_kind                  content_platform_kind not null,
     display_name                   varchar               not null,
---     base_url                       varchar,
---     image_url                      varchar,
     fetch_new_content_is_automated boolean               not null default false,
     added_by_user_id               uuid                  references app_user (id) on delete set null,
     created_at                     timestamptz           not null default now(),
