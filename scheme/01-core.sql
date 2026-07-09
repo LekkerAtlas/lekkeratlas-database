@@ -1,196 +1,172 @@
-create extension if not exists pgcrypto;
-create extension if not exists hstore;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE EXTENSION IF NOT EXISTS hstore;
 
 -- ---------------------------------------------------------------------------
 -- Enums
 -- ---------------------------------------------------------------------------
-
-create type content_type as enum (
+CREATE TYPE content_type AS enum (
     'live_stream',
     'live_stream_clip',
     'official_video',
     'fan_made_video',
     'lekker_spelen_related',
     'other'
-    );
+);
 
-create type content_platform_kind as enum (
+CREATE TYPE content_platform_kind AS enum (
     'video'
-    );
+);
 
-create type queue_job_type as enum (
+CREATE TYPE queue_job_type AS enum (
     'fetch_platform_content',
     'fetch_channel_metadata',
     'fetch_video_metadata'
-    );
+);
 
-create type queue_job_status as enum (
+CREATE TYPE queue_job_status AS enum (
     'queued',
     'running',
     'completed',
     'failed',
     'canceled'
-    );
+);
 
 -- Useful for quickly querying and enforcing a contentplatform has an implementation (like an abstract class)
-create type source_kind as enum (
+CREATE TYPE source_kind AS enum (
     'youtube_channel'
-    );
+);
 
 -- ---------------------------------------------------------------------------
 -- Users
 -- ---------------------------------------------------------------------------
-
 -- Map athentik user to local class https://api.goauthentik.io/reference/core-users-list/
-create table app_user
-(
-    id           uuid primary key      default gen_random_uuid(),
-    username     varchar(150) not null unique, -- mirrors the authentik max username lenght
-    email        varchar      not null unique,
-    display_name varchar      not null,
-    is_verified  boolean      not null default false,
-    date_joined  timestamptz  not null default now(),
-    last_updated timestamptz  not null default now(),
-    last_login   timestamptz  not null default now()
+CREATE TABLE app_user (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
+    username varchar(150) NOT NULL UNIQUE, -- mirrors the authentik max username lenght
+    email varchar NOT NULL UNIQUE,
+    display_name varchar NOT NULL,
+    is_verified boolean NOT NULL DEFAULT FALSE,
+    date_joined timestamptz NOT NULL DEFAULT now(),
+    last_updated timestamptz NOT NULL DEFAULT now(),
+    last_login timestamptz NOT NULL DEFAULT now()
 );
 
 -- ---------------------------------------------------------------------------
 -- Content
 -- ---------------------------------------------------------------------------
-
-create table content
-(
-    id                           uuid primary key      default gen_random_uuid(),
-    content_type                 content_type not null,
-    title                        varchar      not null, -- TODO Map these values to audited datatype
-    description                  text,                  -- TODO Map these values to audited datatype
-    show_games_played_by_default boolean      not null default true,
-    original_published_at        timestamptz,
-    created_at                   timestamptz  not null default now(),
-    updated_at                   timestamptz  not null default now()
+CREATE TABLE content (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
+    content_type content_type NOT NULL,
+    title varchar NOT NULL, -- TODO Map these values to audited datatype
+    description text, -- TODO Map these values to audited datatype
+    show_games_played_by_default boolean NOT NULL DEFAULT TRUE,
+    original_published_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-create table content_platform
-(
-    id                             uuid primary key               default gen_random_uuid(),
-    platform_kind                  content_platform_kind not null,
-    display_name                   varchar               not null,
-    fetch_new_content_is_automated boolean               not null default false,
-    added_by_user_id               uuid                  references app_user (id) on delete set null,
-    created_at                     timestamptz           not null default now(),
-constraint content_platform_id_platform_kind_key
-    unique (id, platform_kind)
+CREATE TABLE content_platform (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
+    platform_kind content_platform_kind NOT NULL,
+    display_name varchar NOT NULL,
+    fetch_new_content_is_automated boolean NOT NULL DEFAULT FALSE,
+    added_by_user_id uuid REFERENCES app_user (id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT content_platform_id_platform_kind_key UNIQUE (id, platform_kind)
 );
 
-create table content_video_platform
-(
-    id            uuid primary key references content_platform (id) on delete cascade,
-    platform_kind content_platform_kind not null default 'video',
-    source_kind   source_kind           not null,
-    constraint content_video_platform_kind_check check (platform_kind = 'video'),
-constraint content_video_platform_id_source_kind_key
-    unique (id, source_kind),
-constraint content_video_platform_id_platform_kind_key
-    unique (id, platform_kind),
-    foreign key (id, platform_kind) references content_platform (id, platform_kind) on delete cascade
+CREATE TABLE content_video_platform (
+    id uuid PRIMARY KEY REFERENCES content_platform (id) ON DELETE CASCADE,
+    platform_kind content_platform_kind NOT NULL DEFAULT 'video',
+    source_kind source_kind NOT NULL,
+    CONSTRAINT content_video_platform_kind_check CHECK (platform_kind = 'video'),
+    CONSTRAINT content_video_platform_id_source_kind_key UNIQUE (id, source_kind),
+    CONSTRAINT content_video_platform_id_platform_kind_key UNIQUE (id, platform_kind),
+    FOREIGN KEY (id, platform_kind) REFERENCES content_platform (id, platform_kind) ON DELETE CASCADE
 );
 
-create table youtube_channel
-(
-    id                 uuid primary key references content_video_platform (id) on delete cascade,
-    source_kind        source_kind not null default 'youtube_channel',
-    youtube_channel_id varchar     not null unique,
-    constraint youtube_channel_source_kind_check check (source_kind = 'youtube_channel'),
-constraint youtube_channel_id_source_kind_key
-    unique (id, source_kind),
-    foreign key (id, source_kind) references content_video_platform (id, source_kind) on delete cascade
+CREATE TABLE youtube_channel (
+    id uuid PRIMARY KEY REFERENCES content_video_platform (id) ON DELETE CASCADE,
+    source_kind source_kind NOT NULL DEFAULT 'youtube_channel',
+    youtube_channel_id varchar NOT NULL UNIQUE,
+    CONSTRAINT youtube_channel_source_kind_check CHECK (source_kind = 'youtube_channel'),
+    CONSTRAINT youtube_channel_id_source_kind_key UNIQUE (id, source_kind),
+    FOREIGN KEY (id, source_kind) REFERENCES content_video_platform (id, source_kind) ON DELETE CASCADE
 );
 
-create table hosted_content
-(
-    id                  uuid primary key default gen_random_uuid(),
-    content_id          uuid    not null references content (id) on delete cascade,
-    content_platform_id uuid    not null references content_platform (id) on delete cascade,
-    external_content_id varchar not null,
---     url                 varchar     not null,
-constraint hosted_content_content_id_content_platform_id_key
-    unique (content_id, content_platform_id),
-constraint hosted_content_content_platform_id_external_content_id_key
-    unique (content_platform_id, external_content_id)
---     unique (url)
+CREATE TABLE hosted_content (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
+    content_id uuid NOT NULL REFERENCES content (id) ON DELETE CASCADE,
+    content_platform_id uuid NOT NULL REFERENCES content_platform (id) ON DELETE CASCADE,
+    external_content_id varchar NOT NULL,
+    --     url                 varchar     not null,
+    CONSTRAINT hosted_content_content_id_content_platform_id_key UNIQUE (content_id, content_platform_id),
+    CONSTRAINT hosted_content_content_platform_id_external_content_id_key UNIQUE (content_platform_id, external_content_id)
+    --     unique (url)
 );
 
-create index idx_hosted_content_content_id on hosted_content (content_id);
-create index idx_hosted_content_content_platform_id on hosted_content (content_platform_id);
+CREATE INDEX idx_hosted_content_content_id ON hosted_content (content_id);
+
+CREATE INDEX idx_hosted_content_content_platform_id ON hosted_content (content_platform_id);
 
 -- ---------------------------------------------------------------------------
 -- Optional simple tags
 -- ---------------------------------------------------------------------------
-
-create table tag
-(
-    id         uuid primary key      default gen_random_uuid(),
-    name       varchar(100) not null unique,
-    created_at timestamptz  not null default now()
+CREATE TABLE tag (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
+    name varchar(100) NOT NULL UNIQUE,
+    created_at timestamptz NOT NULL DEFAULT now()
 );
 
-create table content_tag
-(
-    content_id uuid not null references content (id) on delete cascade,
-    tag_id     uuid not null references tag (id) on delete cascade,
-    primary key (content_id, tag_id)
+CREATE TABLE content_tag (
+    content_id uuid NOT NULL REFERENCES content (id) ON DELETE CASCADE,
+    tag_id uuid NOT NULL REFERENCES tag (id) ON DELETE CASCADE,
+    PRIMARY KEY (content_id, tag_id)
 );
 
-create index idx_content_tag_tag_id on content_tag (tag_id);
+CREATE INDEX idx_content_tag_tag_id ON content_tag (tag_id);
 
 -- ---------------------------------------------------------------------------
 -- Queue tracking
 -- ---------------------------------------------------------------------------
-
-create table queue_job
-(
-    id                   uuid primary key          default gen_random_uuid(),
-    parent_job_id        uuid             references queue_job (id) on delete set null,
-    type                 queue_job_type   not null,
-    status               queue_job_status not null default 'queued',
-    payload              jsonb            not null default '{}'::jsonb,
-    requested_by_user_id uuid             references app_user (id) on delete set null,
-    correlation_key      varchar,
-    dedupe_key           varchar,
-    error_type           varchar,
-    error_message        text,
-    created_at           timestamptz      not null default now(),
-    started_at           timestamptz,
-    finished_at          timestamptz
+CREATE TABLE queue_job (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
+    parent_job_id uuid REFERENCES queue_job (id) ON DELETE SET NULL,
+    type queue_job_type NOT NULL,
+    status queue_job_status NOT NULL DEFAULT 'queued',
+    payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    requested_by_user_id uuid REFERENCES app_user (id) ON DELETE SET NULL,
+    correlation_key varchar,
+    dedupe_key varchar,
+    error_type varchar,
+    error_message text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    started_at timestamptz,
+    finished_at timestamptz
 );
 
-create unique index uq_queue_job_active_dedupe_key
-    on queue_job (dedupe_key)
-    where dedupe_key is not null
-        and status in ('queued', 'running');
+CREATE UNIQUE INDEX uq_queue_job_active_dedupe_key ON queue_job (dedupe_key)
+WHERE
+    dedupe_key IS NOT NULL AND status IN ('queued', 'running');
 
-create index idx_queue_job_requested_by_user_created_at
-    on queue_job (requested_by_user_id, created_at desc);
+CREATE INDEX idx_queue_job_requested_by_user_created_at ON queue_job (requested_by_user_id, created_at DESC);
 
-create index idx_queue_job_parent_job_id_created_at
-    on queue_job (parent_job_id, created_at);
+CREATE INDEX idx_queue_job_parent_job_id_created_at ON queue_job (parent_job_id, created_at);
 
-create index idx_queue_job_correlation_key
-    on queue_job (correlation_key)
-    where correlation_key is not null;
+CREATE INDEX idx_queue_job_correlation_key ON queue_job (correlation_key)
+WHERE
+    correlation_key IS NOT NULL;
 
-create table queue_job_event
-(
-    id         uuid primary key     default gen_random_uuid(),
-    job_id     uuid        not null references queue_job (id) on delete cascade,
-    status     queue_job_status,
-    message    text,
-    created_at timestamptz not null default now()
+CREATE TABLE queue_job_event (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
+    job_id uuid NOT NULL REFERENCES queue_job (id) ON DELETE CASCADE,
+    status queue_job_status,
+    message text,
+    created_at timestamptz NOT NULL DEFAULT now()
 );
 
-create index idx_queue_job_event_job_id_created_at
-    on queue_job_event (job_id, created_at);
-
+CREATE INDEX idx_queue_job_event_job_id_created_at ON queue_job_event (job_id, created_at);
 
 -- ---------------------------------------------------------------------------
 -- Queue job creation event
@@ -198,31 +174,21 @@ create index idx_queue_job_event_job_id_created_at
 -- Every queue_job gets an initial timeline event when it is created.
 -- The event status is intentionally null so it does not trigger a redundant
 -- status synchronization update through trg_sync_queue_job_status_from_event.
-
-create or replace function create_queue_job_created_event()
-    returns trigger
-    language plpgsql
-as
-$$
-begin
-    insert into queue_job_event (job_id,
-                                 status,
-                                 message,
-                                 created_at)
-    values (new.id,
-            'queued',
-            'Job created',
-            new.created_at);
-
-    return new;
-end;
+CREATE OR REPLACE FUNCTION create_queue_job_created_event ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO queue_job_event (job_id, status, message, created_at)
+        VALUES (NEW.id, 'queued', 'Job created', NEW.created_at);
+    RETURN new;
+END;
 $$;
 
-create trigger trg_create_queue_job_created_event
-    after insert
-    on queue_job
-    for each row
-execute function create_queue_job_created_event();
+CREATE TRIGGER trg_create_queue_job_created_event
+    AFTER INSERT ON queue_job
+    FOR EACH ROW
+    EXECUTE FUNCTION create_queue_job_created_event ();
 
 -- ---------------------------------------------------------------------------
 -- Queue job status synchronization
@@ -231,112 +197,102 @@ execute function create_queue_job_created_event();
 -- the latest/current status for fast user-facing status checks.
 -- When a new event with a non-null status is inserted, queue_job is updated.
 -- Events without a status are treated as timeline/debug entries only.
-
-create or replace function sync_queue_job_status_from_event()
-    returns trigger
-    language plpgsql
-as
-$$
-declare
-    current_status     queue_job_status;
-    next_started_at    timestamptz;
-    next_finished_at   timestamptz;
-    next_error_type    varchar;
+CREATE OR REPLACE FUNCTION sync_queue_job_status_from_event ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    current_status queue_job_status;
+    next_started_at timestamptz;
+    next_finished_at timestamptz;
+    next_error_type varchar;
     next_error_message text;
-begin
-    if new.status is null then
-        return new;
-    end if;
-
-    select status,
-           started_at,
-           finished_at,
-           error_type,
-           error_message
-    into current_status,
+BEGIN
+    IF NEW.status IS NULL THEN
+        RETURN new;
+    END IF;
+    SELECT
+        status,
+        started_at,
+        finished_at,
+        error_type,
+        error_message
+    INTO
+        current_status,
         next_started_at,
         next_finished_at,
         next_error_type,
         next_error_message
-    from queue_job
-    where id = new.job_id
-        for update;
-
-    if current_status is null then
-        raise exception 'queue_job_event references missing queue_job %', new.job_id
-            using errcode = '23503';
-    end if;
-
-    if current_status in ('completed', 'failed', 'canceled')
-        and new.status <> current_status then
-        raise exception 'cannot change terminal queue_job % from % to %',
-            new.job_id,
-            current_status,
-            new.status
-            using errcode = '23514';
-    end if;
-
-    next_started_at = case
-                          when new.status = 'running' and next_started_at is null then new.created_at
-                          when new.status in ('completed', 'failed', 'canceled') and next_started_at is null
-                              then new.created_at
-                          else next_started_at
-        end;
-
-    next_finished_at = case
-                           when new.status in ('completed', 'failed', 'canceled') and next_finished_at is null
-                               then new.created_at
-                           else next_finished_at
-        end;
-
-    next_error_type = case
-
-                          when new.status = 'failed' then next_error_type
-
-                          else null
-        end;
-
-    next_error_message = case
-
-                             when new.status = 'failed' then coalesce(new.message, next_error_message)
-
-                             else null
-        end;
-
-    if new.status = 'running' and next_started_at is null then
-        raise exception 'queue_job % cannot be running without started_at', new.job_id
-            using errcode = '23514';
-    end if;
-
-    if new.status in ('completed', 'failed', 'canceled') and next_finished_at is null then
-        raise exception 'queue_job % cannot be % without finished_at', new.job_id, new.status
-            using errcode = '23514';
-    end if;
-
-    if new.status <> 'failed' and (next_error_type is not null or next_error_message is not null) then
-        raise exception 'queue_job % cannot have error fields while status is %', new.job_id, new.status
-            using errcode = '23514';
-    end if;
-
-    update queue_job
-    set status        = new.status,
-        started_at    = next_started_at,
-        finished_at   = next_finished_at,
-        error_type    = next_error_type,
+    FROM
+        queue_job
+    WHERE
+        id = NEW.job_id
+    FOR UPDATE;
+    IF current_status IS NULL THEN
+        RAISE EXCEPTION 'queue_job_event references missing queue_job %', NEW.job_id
+            USING errcode = '23503';
+    END IF;
+    IF current_status IN ('completed', 'failed', 'canceled') AND NEW.status <> current_status THEN
+        RAISE EXCEPTION 'cannot change terminal queue_job % from % to %', NEW.job_id, current_status, NEW.status
+            USING errcode = '23514';
+    END IF;
+    next_started_at = CASE WHEN NEW.status = 'running'
+        AND next_started_at IS NULL THEN
+        NEW.created_at
+    WHEN NEW.status IN ('completed', 'failed', 'canceled')
+        AND next_started_at IS NULL THEN
+        NEW.created_at
+    ELSE
+        next_started_at
+    END;
+    next_finished_at = CASE WHEN NEW.status IN ('completed', 'failed', 'canceled')
+        AND next_finished_at IS NULL THEN
+        NEW.created_at
+    ELSE
+        next_finished_at
+    END;
+    next_error_type = CASE WHEN NEW.status = 'failed' THEN
+        next_error_type
+    ELSE
+        NULL
+    END;
+    next_error_message = CASE WHEN NEW.status = 'failed' THEN
+        coalesce(NEW.message, next_error_message)
+    ELSE
+        NULL
+    END;
+    IF NEW.status = 'running' AND next_started_at IS NULL THEN
+        RAISE EXCEPTION 'queue_job % cannot be running without started_at', NEW.job_id
+            USING errcode = '23514';
+    END IF;
+    IF NEW.status IN ('completed', 'failed', 'canceled') AND next_finished_at IS NULL THEN
+        RAISE EXCEPTION 'queue_job % cannot be % without finished_at', NEW.job_id, NEW.status
+            USING errcode = '23514';
+    END IF;
+    IF NEW.status <> 'failed' AND (next_error_type IS NOT NULL OR next_error_message IS NOT NULL) THEN
+        RAISE EXCEPTION 'queue_job % cannot have error fields while status is %', NEW.job_id, NEW.status
+            USING errcode = '23514';
+    END IF;
+    UPDATE
+        queue_job
+    SET
+        status = NEW.status,
+        started_at = next_started_at,
+        finished_at = next_finished_at,
+        error_type = next_error_type,
         error_message = next_error_message
-    where id = new.job_id;
-
-    if not found then
-        raise exception 'failed to synchronize queue_job % from event %', new.job_id, new.id
-            using errcode = '23503';
-    end if;
-
-    return new;
-end;
+    WHERE
+        id = NEW.job_id;
+    IF NOT found THEN
+        RAISE EXCEPTION 'failed to synchronize queue_job % from event %', NEW.job_id, NEW.id
+            USING errcode = '23503';
+    END IF;
+    RETURN new;
+END;
 $$;
 
-create trigger trg_sync_queue_job_status_from_event
-    after insert
-    on queue_job_event
-    for each row
-execute function sync_queue_job_status_from_event();
+CREATE TRIGGER trg_sync_queue_job_status_from_event
+    AFTER INSERT ON queue_job_event
+    FOR EACH ROW
+    EXECUTE FUNCTION sync_queue_job_status_from_event ();
+
