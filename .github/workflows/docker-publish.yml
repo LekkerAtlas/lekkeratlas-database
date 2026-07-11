@@ -33,6 +33,7 @@ jobs:
         run: |
           for i in {1..30}; do
             if docker exec lekkeratlas-database-test pg_isready -U lekkeratlas -d lekkeratlas; then
+              sleep 1
               exit 0
             fi
 
