@@ -10,47 +10,65 @@ fi
 
 DATABASE_NAME="${POSTGRES_DB:-postgres}"
 DATABASE_USER="${POSTGRES_USER:-postgres}"
-SCHEMA_FILE="${SCHEMA_FILE:-/docker-entrypoint-initdb.d/01-core.sql}"
+SCHEMA_DIR="${SCHEMA_DIR:-/docker-entrypoint-initdb.d}"
 
 export PGPASSWORD="${POSTGRES_PASSWORD:-}"
 
-case "$ACTION" in
-diff | dry-run)
-  exec psqldef \
+COMBINED_SCHEMA="$(mktemp)"
+SCHEMA_FILE_LIST="$(mktemp)"
+
+cleanup() {
+  rm -f "$COMBINED_SCHEMA" "$SCHEMA_FILE_LIST"
+}
+
+trap cleanup EXIT INT TERM
+
+find "$SCHEMA_DIR" \
+  -type f \
+  -name '*.sql' \
+  -print |
+  sort >"$SCHEMA_FILE_LIST"
+
+if [ ! -s "$SCHEMA_FILE_LIST" ]; then
+  echo "No .sql files found under: $SCHEMA_DIR" >&2
+  exit 1
+fi
+
+while IFS= read -r schema_file; do
+  printf '\n-- Source: %s\n\n' "$schema_file" >>"$COMBINED_SCHEMA"
+  cat "$schema_file" >>"$COMBINED_SCHEMA"
+  printf '\n' >>"$COMBINED_SCHEMA"
+done <"$SCHEMA_FILE_LIST"
+
+run_psqldef() {
+  psqldef \
     --host=127.0.0.1 \
     --user="$DATABASE_USER" \
     "$DATABASE_NAME" \
-    --file="$SCHEMA_FILE" \
-    --dry-run \
+    --file="$COMBINED_SCHEMA" \
     "$@"
+}
+
+case "$ACTION" in
+diff | dry-run)
+  run_psqldef --dry-run "$@"
   ;;
 
 check)
-  exec psqldef \
-    --host=127.0.0.1 \
-    --user="$DATABASE_USER" \
-    "$DATABASE_NAME" \
-    --file="$SCHEMA_FILE" \
-    --check \
-    "$@"
+  run_psqldef --check "$@"
   ;;
 
 apply)
-  exec psqldef \
-    --host=127.0.0.1 \
-    --user="$DATABASE_USER" \
-    "$DATABASE_NAME" \
-    --file="$SCHEMA_FILE" \
-    --apply \
-    "$@"
+  run_psqldef --apply "$@"
   ;;
 
 export)
-  exec psqldef \
+  psqldef \
     --host=127.0.0.1 \
     --user="$DATABASE_USER" \
     "$DATABASE_NAME" \
-    --export
+    --export \
+    "$@"
   ;;
 
 *)
