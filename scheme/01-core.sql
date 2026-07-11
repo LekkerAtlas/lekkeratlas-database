@@ -139,8 +139,6 @@ CREATE TABLE queue_job(
     requested_by_user_id uuid             REFERENCES app_user (id) ON DELETE SET NULL,
     correlation_key      varchar,
     dedupe_key           varchar,
-    error_type           varchar,
-    error_message        text,
     created_at           timestamptz      NOT NULL DEFAULT now(),
     started_at           timestamptz,
     finished_at          timestamptz
