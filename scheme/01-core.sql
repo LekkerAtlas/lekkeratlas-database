@@ -209,8 +209,6 @@ DECLARE
     current_status queue_job_status;
     next_started_at timestamptz;
     next_finished_at timestamptz;
-    next_error_type varchar;
-    next_error_message text;
 BEGIN
     IF NEW.status IS NULL THEN
         RETURN new;
@@ -219,14 +217,10 @@ BEGIN
         status,
         started_at,
         finished_at,
-        error_type,
-        error_message
     INTO
         current_status,
         next_started_at,
         next_finished_at,
-        next_error_type,
-        next_error_message
     FROM
         queue_job
     WHERE
@@ -255,16 +249,6 @@ BEGIN
     ELSE
         next_finished_at
     END;
-    next_error_type = CASE WHEN NEW.status = 'failed' THEN
-        next_error_type
-    ELSE
-        NULL
-    END;
-    next_error_message = CASE WHEN NEW.status = 'failed' THEN
-        coalesce(NEW.message, next_error_message)
-    ELSE
-        NULL
-    END;
     IF NEW.status = 'running' AND next_started_at IS NULL THEN
         RAISE EXCEPTION 'queue_job % cannot be running without started_at', NEW.job_id
             USING errcode = '23514';
@@ -273,18 +257,12 @@ BEGIN
         RAISE EXCEPTION 'queue_job % cannot be % without finished_at', NEW.job_id, NEW.status
             USING errcode = '23514';
     END IF;
-    IF NEW.status <> 'failed' AND (next_error_type IS NOT NULL OR next_error_message IS NOT NULL) THEN
-        RAISE EXCEPTION 'queue_job % cannot have error fields while status is %', NEW.job_id, NEW.status
-            USING errcode = '23514';
-    END IF;
     UPDATE
         queue_job
     SET
         status = NEW.status,
         started_at = next_started_at,
         finished_at = next_finished_at,
-        error_type = next_error_type,
-        error_message = next_error_message
     WHERE
         id = NEW.job_id;
     IF NOT found THEN
