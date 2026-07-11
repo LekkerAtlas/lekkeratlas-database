@@ -8,6 +8,24 @@ if [ "$#" -gt 0 ]; then
   shift
 fi
 
+ALLOW_DESTRUCTIVE=false
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+  --allow-destructive)
+    ALLOW_DESTRUCTIVE=true
+    shift
+    ;;
+  --)
+    shift
+    break
+    ;;
+  *)
+    break
+    ;;
+  esac
+done
+
 DATABASE_NAME="${POSTGRES_DB:-postgres}"
 DATABASE_USER="${POSTGRES_USER:-postgres}"
 SCHEMA_DIR="${SCHEMA_DIR:-/docker-entrypoint-initdb.d}"
@@ -41,6 +59,10 @@ while IFS= read -r schema_file; do
 done <"$SCHEMA_FILE_LIST"
 
 run_psqldef() {
+  if [ "$ALLOW_DESTRUCTIVE" = "true" ]; then
+    set -- --enable-drop "$@"
+  fi
+
   psqldef \
     --host=127.0.0.1 \
     --user="$DATABASE_USER" \
@@ -72,7 +94,7 @@ export)
   ;;
 
 *)
-  echo "Usage: schema-sync {diff|check|apply|export} [psqldef options]" >&2
+  echo "Usage: schema-sync {diff|dry-run|check|apply|export} [--allow-destructive] [psqldef options]" >&2
   exit 1
   ;;
 esac
