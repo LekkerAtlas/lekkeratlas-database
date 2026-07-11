@@ -209,24 +209,18 @@ DECLARE
     current_status queue_job_status;
     next_started_at timestamptz;
     next_finished_at timestamptz;
-    next_error_type varchar;
-    next_error_message text;
 BEGIN
     IF NEW.status IS NULL THEN
-        RETURN new;
+        RETURN NEW;
     END IF;
     SELECT
         status,
         started_at,
-        finished_at,
-        error_type,
-        error_message
+        finished_at
     INTO
         current_status,
         next_started_at,
-        next_finished_at,
-        next_error_type,
-        next_error_message
+        next_finished_at
     FROM
         queue_job
     WHERE
@@ -240,7 +234,7 @@ BEGIN
         RAISE EXCEPTION 'cannot change terminal queue_job % from % to %', NEW.job_id, current_status, NEW.status
             USING errcode = '23514';
     END IF;
-    next_started_at = CASE WHEN NEW.status = 'running'
+    next_started_at := CASE WHEN NEW.status = 'running'
         AND next_started_at IS NULL THEN
         NEW.created_at
     WHEN NEW.status IN ('completed', 'failed', 'canceled')
@@ -249,21 +243,11 @@ BEGIN
     ELSE
         next_started_at
     END;
-    next_finished_at = CASE WHEN NEW.status IN ('completed', 'failed', 'canceled')
+    next_finished_at := CASE WHEN NEW.status IN ('completed', 'failed', 'canceled')
         AND next_finished_at IS NULL THEN
         NEW.created_at
     ELSE
         next_finished_at
-    END;
-    next_error_type = CASE WHEN NEW.status = 'failed' THEN
-        next_error_type
-    ELSE
-        NULL
-    END;
-    next_error_message = CASE WHEN NEW.status = 'failed' THEN
-        coalesce(NEW.message, next_error_message)
-    ELSE
-        NULL
     END;
     IF NEW.status = 'running' AND next_started_at IS NULL THEN
         RAISE EXCEPTION 'queue_job % cannot be running without started_at', NEW.job_id
@@ -273,25 +257,19 @@ BEGIN
         RAISE EXCEPTION 'queue_job % cannot be % without finished_at', NEW.job_id, NEW.status
             USING errcode = '23514';
     END IF;
-    IF NEW.status <> 'failed' AND (next_error_type IS NOT NULL OR next_error_message IS NOT NULL) THEN
-        RAISE EXCEPTION 'queue_job % cannot have error fields while status is %', NEW.job_id, NEW.status
-            USING errcode = '23514';
-    END IF;
     UPDATE
         queue_job
     SET
         status = NEW.status,
         started_at = next_started_at,
-        finished_at = next_finished_at,
-        error_type = next_error_type,
-        error_message = next_error_message
+        finished_at = next_finished_at
     WHERE
         id = NEW.job_id;
-    IF NOT found THEN
+    IF NOT FOUND THEN
         RAISE EXCEPTION 'failed to synchronize queue_job % from event %', NEW.job_id, NEW.id
             USING errcode = '23503';
     END IF;
-    RETURN new;
+    RETURN NEW;
 END;
 $$;
 
