@@ -146,7 +146,7 @@ CREATE TABLE queue_job(
 
 CREATE TABLE queue_job_cancellation_request(
     job_id               uuid PRIMARY KEY REFERENCES queue_job (id) ON DELETE CASCADE,
-    requested_by_user_id uuid             REFERENCES app_user (id) ON DELETE CASCADE,
+    requested_by_user_id uuid             REFERENCES app_user (id) ON DELETE SET NULL,
     requested_at         timestamptz      NOT NULL DEFAULT now()
 );
 
