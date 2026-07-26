@@ -86,7 +86,6 @@ CREATE INDEX idx_creator_account_creator_id ON creator_account(creator_id);
 -- creator_id always refers to the original creator of the content.
 CREATE TABLE content(
     id                           uuid PRIMARY KEY          DEFAULT gen_random_uuid(),
-    creator_id                   uuid             NOT NULL REFERENCES content_creator (id) ON DELETE RESTRICT,
     content_type                 content_type     NOT NULL,
     title                        varchar          NOT NULL,
     description                  text,
@@ -108,7 +107,6 @@ CREATE INDEX idx_content_original_published_at ON content(original_published_at)
 CREATE TABLE hosted_content(
     id                  uuid PRIMARY KEY          DEFAULT gen_random_uuid(),
     content_id          uuid             NOT NULL,
-    creator_id          uuid             NOT NULL,
     creator_account_id  uuid             NOT NULL,
     external_content_id varchar          NOT NULL,
     created_at          timestamptz      NOT NULL DEFAULT now(),
