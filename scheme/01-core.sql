@@ -14,13 +14,13 @@ CREATE TYPE content_type AS enum(
     'other'
 );
 
-CREATE TYPE content_platform_kind AS enum(
-    'video'
+CREATE TYPE creator_account_kind AS enum(
+    'youtube_channel'
 );
 
 CREATE TYPE queue_job_type AS enum(
-    'fetch_platform_content',
-    'fetch_channel_metadata',
+    'fetch_creator_account_content',
+    'fetch_creator_account_metadata',
     'fetch_video_metadata'
 );
 
@@ -32,18 +32,13 @@ CREATE TYPE queue_job_status AS enum(
     'canceled'
 );
 
--- Useful for quickly querying and enforcing a contentplatform has an implementation (like an abstract class)
-CREATE TYPE source_kind AS enum(
-    'youtube_channel'
-);
-
 -- ---------------------------------------------------------------------------
 -- Users
 -- ---------------------------------------------------------------------------
--- Map athentik user to local class https://api.goauthentik.io/reference/core-users-list/
+-- Map authentik user to local class https://api.goauthentik.io/reference/core-users-list/
 CREATE TABLE app_user(
     id           uuid PRIMARY KEY          DEFAULT gen_random_uuid(),
-    username     varchar(150)     NOT NULL UNIQUE,                    -- mirrors the authentik max username lenght
+    username     varchar(150)     NOT NULL UNIQUE,                    -- mirrors the authentik max username length
     email        varchar          NOT NULL UNIQUE,
     display_name varchar          NOT NULL,
     is_verified  boolean          NOT NULL DEFAULT FALSE,
@@ -55,60 +50,79 @@ CREATE TABLE app_user(
 -- ---------------------------------------------------------------------------
 -- Content
 -- ---------------------------------------------------------------------------
+-- Represents the stable person, group, or organisation that created content.
+CREATE TABLE content_creator(
+    id               uuid PRIMARY KEY          DEFAULT gen_random_uuid(),
+    display_name     varchar          NOT NULL,
+    added_by_user_id uuid             REFERENCES app_user (id) ON DELETE SET NULL,
+    created_at       timestamptz      NOT NULL DEFAULT now(),
+    updated_at       timestamptz      NOT NULL DEFAULT now()
+);
+
+-- Represents a platform-specific account belonging to a creator.
+--
+-- For example:
+-- - a YouTube channel
+-- - a Twitch channel
+-- - a Vimeo account
+CREATE TABLE creator_account(
+    id                             uuid PRIMARY KEY              DEFAULT gen_random_uuid(),
+    creator_id                     uuid                 NOT NULL REFERENCES content_creator (id) ON DELETE CASCADE,
+    account_kind                   creator_account_kind NOT NULL,
+    external_account_id            varchar              NOT NULL,
+    display_name                   varchar              NOT NULL,
+    fetch_new_content_is_automated boolean              NOT NULL DEFAULT FALSE,
+    added_by_user_id               uuid                 REFERENCES app_user (id) ON DELETE SET NULL,
+    created_at                     timestamptz          NOT NULL DEFAULT now(),
+    updated_at                     timestamptz          NOT NULL DEFAULT now(),
+    CONSTRAINT creator_account_kind_external_account_id_key UNIQUE (account_kind, external_account_id),
+    CONSTRAINT creator_account_id_creator_id_key UNIQUE (id, creator_id)
+);
+
+CREATE INDEX idx_creator_account_creator_id ON creator_account(creator_id);
+
+-- Represents one logical piece of content independently of where it is hosted.
+--
+-- creator_id always refers to the original creator of the content.
 CREATE TABLE content(
     id                           uuid PRIMARY KEY          DEFAULT gen_random_uuid(),
+    creator_id                   uuid             NOT NULL REFERENCES content_creator (id) ON DELETE RESTRICT,
     content_type                 content_type     NOT NULL,
-    title                        varchar          NOT NULL,                           -- TODO Map these values to audited datatype
-    description                  text,                                                -- TODO Map these values to audited datatype
+    title                        varchar          NOT NULL,
+    description                  text,
     show_games_played_by_default boolean          NOT NULL DEFAULT TRUE,
     original_published_at        timestamptz,
     created_at                   timestamptz      NOT NULL DEFAULT now(),
-    updated_at                   timestamptz      NOT NULL DEFAULT now()
+    updated_at                   timestamptz      NOT NULL DEFAULT now(),
+    CONSTRAINT content_id_creator_id_key UNIQUE (id, creator_id)
 );
 
-CREATE TABLE content_platform(
-    id                             uuid PRIMARY KEY               DEFAULT gen_random_uuid(),
-    platform_kind                  content_platform_kind NOT NULL,
-    display_name                   varchar               NOT NULL,
-    fetch_new_content_is_automated boolean               NOT NULL DEFAULT FALSE,
-    added_by_user_id               uuid                  REFERENCES app_user (id) ON DELETE SET NULL,
-    created_at                     timestamptz           NOT NULL DEFAULT now(),
-    CONSTRAINT content_platform_id_platform_kind_key UNIQUE (id, platform_kind)
-);
+CREATE INDEX idx_content_creator_id ON content(creator_id);
 
-CREATE TABLE content_video_platform(
-    id            uuid PRIMARY KEY      REFERENCES content_platform (id) ON DELETE CASCADE,
-    platform_kind content_platform_kind NOT NULL DEFAULT 'video',
-    source_kind   source_kind           NOT NULL,
-    CONSTRAINT content_video_platform_kind_check CHECK (platform_kind = 'video'),
-    CONSTRAINT content_video_platform_id_source_kind_key UNIQUE (id, source_kind),
-    CONSTRAINT content_video_platform_id_platform_kind_key UNIQUE (id, platform_kind),
-    FOREIGN KEY (id, platform_kind) REFERENCES content_platform(id, platform_kind) ON DELETE CASCADE
-);
+CREATE INDEX idx_content_original_published_at ON content(original_published_at);
 
-CREATE TABLE youtube_channel(
-    id                 uuid PRIMARY KEY REFERENCES content_video_platform (id) ON DELETE CASCADE,
-    source_kind        source_kind      NOT NULL DEFAULT 'youtube_channel',
-    youtube_channel_id varchar          NOT NULL UNIQUE,
-    CONSTRAINT youtube_channel_source_kind_check CHECK (source_kind = 'youtube_channel'),
-    CONSTRAINT youtube_channel_id_source_kind_key UNIQUE (id, source_kind),
-    FOREIGN KEY (id, source_kind) REFERENCES content_video_platform(id, source_kind) ON DELETE CASCADE
-);
-
+-- Represents one externally hosted occurrence of a logical content item.
+--
+-- The composite foreign keys ensure that the hosting account belongs to the
+-- same creator as the content.
 CREATE TABLE hosted_content(
-    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    content_id          uuid             NOT NULL REFERENCES content (id) ON DELETE CASCADE,
-    content_platform_id uuid             NOT NULL REFERENCES content_platform (id) ON DELETE CASCADE,
+    id                  uuid PRIMARY KEY          DEFAULT gen_random_uuid(),
+    content_id          uuid             NOT NULL,
+    creator_id          uuid             NOT NULL,
+    creator_account_id  uuid             NOT NULL,
     external_content_id varchar          NOT NULL,
-    --     url                 varchar     not null,
-    CONSTRAINT hosted_content_content_id_content_platform_id_key UNIQUE (content_id, content_platform_id),
-    CONSTRAINT hosted_content_content_platform_id_external_content_id_key UNIQUE (content_platform_id, external_content_id)
-    --     unique (url)
+    created_at          timestamptz      NOT NULL DEFAULT now(),
+    CONSTRAINT hosted_content_content_creator_fk FOREIGN KEY (content_id, creator_id) REFERENCES content(id, creator_id) ON DELETE CASCADE,
+    CONSTRAINT hosted_content_account_creator_fk FOREIGN KEY (creator_account_id, creator_id) REFERENCES creator_account(id, creator_id) ON DELETE CASCADE,
+    CONSTRAINT hosted_content_content_id_creator_account_id_key UNIQUE (content_id, creator_account_id),
+    CONSTRAINT hosted_content_creator_account_id_external_content_id_key UNIQUE (creator_account_id, external_content_id)
 );
 
 CREATE INDEX idx_hosted_content_content_id ON hosted_content(content_id);
 
-CREATE INDEX idx_hosted_content_content_platform_id ON hosted_content(content_platform_id);
+CREATE INDEX idx_hosted_content_creator_account_id ON hosted_content(creator_account_id);
+
+CREATE INDEX idx_hosted_content_creator_id ON hosted_content(creator_id);
 
 -- ---------------------------------------------------------------------------
 -- Optional simple tags
@@ -276,4 +290,3 @@ CREATE TRIGGER trg_sync_queue_job_status_from_event
     AFTER INSERT ON queue_job_event
     FOR EACH ROW
     EXECUTE FUNCTION sync_queue_job_status_from_event();
-
