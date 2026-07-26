@@ -51,7 +51,7 @@ CREATE TABLE app_user(
 -- Content
 -- ---------------------------------------------------------------------------
 -- Represents the stable person, group, or organisation that created content.
-CREATE TABLE content_creator(
+CREATE TABLE creator(
     id               uuid PRIMARY KEY          DEFAULT gen_random_uuid(),
     display_name     varchar          NOT NULL,
     added_by_user_id uuid             REFERENCES app_user (id) ON DELETE SET NULL,
@@ -67,7 +67,7 @@ CREATE TABLE content_creator(
 -- - a Vimeo account
 CREATE TABLE creator_account(
     id                             uuid PRIMARY KEY              DEFAULT gen_random_uuid(),
-    creator_id                     uuid                 NOT NULL REFERENCES content_creator (id) ON DELETE CASCADE,
+    creator_id                     uuid                 NOT NULL REFERENCES creator (id) ON DELETE CASCADE,
     account_kind                   creator_account_kind NOT NULL,
     external_account_id            varchar              NOT NULL,
     display_name                   varchar              NOT NULL,
@@ -86,7 +86,7 @@ CREATE INDEX idx_creator_account_creator_id ON creator_account(creator_id);
 -- creator_id always refers to the original creator of the content.
 CREATE TABLE content(
     id                           uuid PRIMARY KEY          DEFAULT gen_random_uuid(),
-    creator_id                   uuid             NOT NULL REFERENCES content_creator (id) ON DELETE RESTRICT,
+    creator_id                   uuid             NOT NULL REFERENCES creator (id) ON DELETE RESTRICT,
     content_type                 content_type     NOT NULL,
     title                        varchar          NOT NULL,
     description                  text,
@@ -97,7 +97,7 @@ CREATE TABLE content(
     CONSTRAINT content_id_creator_id_key UNIQUE (id, creator_id)
 );
 
-CREATE INDEX idx_content_creator_id ON content(creator_id);
+CREATE INDEX idx_creator_id ON content(creator_id);
 
 CREATE INDEX idx_content_original_published_at ON content(original_published_at);
 
@@ -112,17 +112,17 @@ CREATE TABLE hosted_content(
     creator_account_id  uuid             NOT NULL,
     external_content_id varchar          NOT NULL,
     created_at          timestamptz      NOT NULL DEFAULT now(),
-    CONSTRAINT hosted_content_content_creator_fk FOREIGN KEY (content_id, creator_id) REFERENCES content(id, creator_id) ON DELETE CASCADE,
+    CONSTRAINT hosted_content_creator_fk FOREIGN KEY (content_id, creator_id) REFERENCES content(id, creator_id) ON DELETE CASCADE,
     CONSTRAINT hosted_content_account_creator_fk FOREIGN KEY (creator_account_id, creator_id) REFERENCES creator_account(id, creator_id) ON DELETE CASCADE,
     CONSTRAINT hosted_content_content_id_creator_account_id_key UNIQUE (content_id, creator_account_id),
-    CONSTRAINT hosted_content_creator_account_id_external_content_id_key UNIQUE (creator_account_id, external_content_id)
+    CONSTRAINT hosted_creator_account_id_external_content_id_key UNIQUE (creator_account_id, external_content_id)
 );
 
 CREATE INDEX idx_hosted_content_content_id ON hosted_content(content_id);
 
-CREATE INDEX idx_hosted_content_creator_account_id ON hosted_content(creator_account_id);
+CREATE INDEX idx_hosted_creator_account_id ON hosted_content(creator_account_id);
 
-CREATE INDEX idx_hosted_content_creator_id ON hosted_content(creator_id);
+CREATE INDEX idx_hosted_creator_id ON hosted_content(creator_id);
 
 -- ---------------------------------------------------------------------------
 -- Optional simple tags
