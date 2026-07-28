@@ -89,6 +89,7 @@ CREATE TABLE content(
     creator_id                   uuid             NOT NULL REFERENCES creator (id) ON DELETE RESTRICT,
     content_type                 content_type     NOT NULL,
     title                        varchar          NOT NULL,
+    duration_seconds             integer          NOT NULL,
     description                  text,
     show_games_played_by_default boolean          NOT NULL DEFAULT TRUE,
     original_published_at        timestamptz,
