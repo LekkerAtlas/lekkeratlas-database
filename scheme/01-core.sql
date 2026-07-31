@@ -101,7 +101,7 @@ CREATE TABLE content(
 
 CREATE INDEX idx_creator_id ON content(creator_id);
 
-CREATE INDEX idx_content_original_published_at ON content(original_published_at);
+CREATE INDEX idx_content_published_at ON content(published_at);
 
 -- Represents one externally hosted occurrence of a logical content item.
 --
