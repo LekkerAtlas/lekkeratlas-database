@@ -92,7 +92,8 @@ CREATE TABLE content(
     duration_seconds             integer          NOT NULL,
     description                  text,
     show_games_played_by_default boolean          NOT NULL DEFAULT TRUE,
-    original_published_at        timestamptz,
+    published_at                 timestamptz      NOT NULL,
+    is_behind_paywall            boolean          NOT NULL,
     created_at                   timestamptz      NOT NULL DEFAULT now(),
     updated_at                   timestamptz      NOT NULL DEFAULT now(),
     CONSTRAINT content_id_creator_id_key UNIQUE (id, creator_id)
