@@ -289,8 +289,16 @@ CREATE OR REPLACE FUNCTION create_queue_job_created_event()
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    INSERT INTO queue_job_event(job_id, status, message, created_at)
-        VALUES(NEW.id, 'queued', 'Job created', NEW.created_at);
+    INSERT INTO queue_job_event(
+        job_id,
+        status,
+        message,
+        created_at)
+    VALUES(
+        NEW.id,
+        'queued',
+        'Job created',
+        NEW.created_at);
     RETURN new;
 END;
 $$;
