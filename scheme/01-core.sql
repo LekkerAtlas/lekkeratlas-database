@@ -55,6 +55,7 @@ CREATE TABLE creator(
     id               uuid PRIMARY KEY          DEFAULT gen_random_uuid(),
     display_name     varchar          NOT NULL,
     added_by_user_id uuid             REFERENCES app_user (id) ON DELETE SET NULL,
+    revision         bigint           NOT NULL DEFAULT 1 CHECK (revision > 0),
     created_at       timestamptz      NOT NULL DEFAULT now(),
     updated_at       timestamptz      NOT NULL DEFAULT now()
 );
@@ -73,6 +74,7 @@ CREATE TABLE creator_account(
     display_name                   varchar              NOT NULL,
     fetch_new_content_is_automated boolean              NOT NULL DEFAULT FALSE,
     added_by_user_id               uuid                 REFERENCES app_user (id) ON DELETE SET NULL,
+    revision                       bigint               NOT NULL DEFAULT 1 CHECK (revision > 0),
     created_at                     timestamptz          NOT NULL DEFAULT now(),
     updated_at                     timestamptz          NOT NULL DEFAULT now(),
     CONSTRAINT creator_account_kind_external_account_id_key UNIQUE (account_kind, external_account_id),
@@ -94,6 +96,7 @@ CREATE TABLE content(
     show_games_played_by_default boolean          NOT NULL DEFAULT TRUE,
     published_at                 timestamptz      NOT NULL,
     is_behind_paywall            boolean          NOT NULL,
+    revision                     bigint           NOT NULL DEFAULT 1 CHECK (revision > 0),
     created_at                   timestamptz      NOT NULL DEFAULT now(),
     updated_at                   timestamptz      NOT NULL DEFAULT now(),
     CONSTRAINT content_id_creator_id_key UNIQUE (id, creator_id)
@@ -113,7 +116,9 @@ CREATE TABLE hosted_content(
     content_id          uuid             NOT NULL,
     creator_account_id  uuid             NOT NULL,
     external_content_id varchar          NOT NULL,
+    revision            bigint           NOT NULL DEFAULT 1 CHECK (revision > 0),
     created_at          timestamptz      NOT NULL DEFAULT now(),
+    updated_at          timestamptz      NOT NULL DEFAULT now(),
     CONSTRAINT hosted_content_creator_fk FOREIGN KEY (content_id, creator_id) REFERENCES content(id, creator_id) ON DELETE CASCADE,
     CONSTRAINT hosted_content_account_creator_fk FOREIGN KEY (creator_account_id, creator_id) REFERENCES creator_account(id, creator_id) ON DELETE CASCADE,
     CONSTRAINT hosted_content_content_id_creator_account_id_key UNIQUE (content_id, creator_account_id),
@@ -132,14 +137,22 @@ CREATE INDEX idx_hosted_creator_id ON hosted_content(creator_id);
 CREATE TABLE tag(
     id         uuid PRIMARY KEY          DEFAULT gen_random_uuid(),
     name       varchar(100)     NOT NULL UNIQUE,
-    created_at timestamptz      NOT NULL DEFAULT now()
+    revision   bigint           NOT NULL DEFAULT 1 CHECK (revision > 0),
+    created_at timestamptz      NOT NULL DEFAULT now(),
+    updated_at timestamptz      NOT NULL DEFAULT now()
 );
 
+-- Give the relationship its own stable UUID so it can use the same generic
+-- change/audit machinery as every other auditable entity.
 CREATE TABLE content_tag(
-    content_id uuid NOT NULL REFERENCES content (id) ON DELETE CASCADE,
-    tag_id     uuid NOT NULL REFERENCES tag (id) ON DELETE CASCADE,
-    PRIMARY KEY (content_id, tag_id)
+    id         uuid PRIMARY KEY          DEFAULT gen_random_uuid(),
+    content_id uuid             NOT NULL REFERENCES content (id) ON DELETE CASCADE,
+    tag_id     uuid             NOT NULL REFERENCES tag (id) ON DELETE CASCADE,
+    created_at timestamptz      NOT NULL DEFAULT now(),
+    CONSTRAINT content_tag_content_id_tag_id_key UNIQUE (content_id, tag_id)
 );
+
+CREATE INDEX idx_content_tag_content_id ON content_tag(content_id);
 
 CREATE INDEX idx_content_tag_tag_id ON content_tag(tag_id);
 
@@ -188,6 +201,84 @@ CREATE TABLE queue_job_event(
 CREATE INDEX idx_queue_job_event_job_id_created_at ON queue_job_event(job_id, created_at);
 
 -- ---------------------------------------------------------------------------
+-- Canonical row revision/update metadata
+-- ---------------------------------------------------------------------------
+-- Authentik-controlled profile fields keep last_updated database-owned without
+-- treating last_login as a profile mutation.
+CREATE OR REPLACE FUNCTION update_app_user_metadata()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    old_profile_data jsonb;
+    new_profile_data jsonb;
+BEGIN
+    old_profile_data := to_jsonb(OLD) - ARRAY['last_updated', 'last_login'];
+    new_profile_data := to_jsonb(NEW) - ARRAY['last_updated', 'last_login'];
+    IF old_profile_data IS DISTINCT FROM new_profile_data THEN
+        NEW.last_updated := now();
+    ELSE
+        NEW.last_updated := OLD.last_updated;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_update_app_user_metadata
+    BEFORE UPDATE ON app_user
+    FOR EACH ROW
+    EXECUTE FUNCTION update_app_user_metadata();
+
+-- All mutable canonical entities increment their revision and refresh updated_at
+-- inside PostgreSQL. Application code therefore cannot accidentally forget to do
+-- either when changing a row.
+CREATE OR REPLACE FUNCTION update_revision_metadata()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    old_domain_data jsonb;
+    new_domain_data jsonb;
+BEGIN
+    old_domain_data := to_jsonb(OLD) - ARRAY['revision', 'updated_at'];
+    new_domain_data := to_jsonb(NEW) - ARRAY['revision', 'updated_at'];
+    IF old_domain_data IS DISTINCT FROM new_domain_data THEN
+        NEW.revision := OLD.revision + 1;
+        NEW.updated_at := now();
+    ELSE
+        NEW.revision := OLD.revision;
+        NEW.updated_at := OLD.updated_at;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_update_creator_revision_metadata
+    BEFORE UPDATE ON creator
+    FOR EACH ROW
+    EXECUTE FUNCTION update_revision_metadata();
+
+CREATE TRIGGER trg_update_creator_account_revision_metadata
+    BEFORE UPDATE ON creator_account
+    FOR EACH ROW
+    EXECUTE FUNCTION update_revision_metadata();
+
+CREATE TRIGGER trg_update_content_revision_metadata
+    BEFORE UPDATE ON content
+    FOR EACH ROW
+    EXECUTE FUNCTION update_revision_metadata();
+
+CREATE TRIGGER trg_update_hosted_content_revision_metadata
+    BEFORE UPDATE ON hosted_content
+    FOR EACH ROW
+    EXECUTE FUNCTION update_revision_metadata();
+
+CREATE TRIGGER trg_update_tag_revision_metadata
+    BEFORE UPDATE ON tag
+    FOR EACH ROW
+    EXECUTE FUNCTION update_revision_metadata();
+
+-- ---------------------------------------------------------------------------
 -- Queue job creation event
 -- ---------------------------------------------------------------------------
 -- Every queue_job gets an initial timeline event when it is created.
@@ -198,8 +289,16 @@ CREATE OR REPLACE FUNCTION create_queue_job_created_event()
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    INSERT INTO queue_job_event(job_id, status, message, created_at)
-        VALUES(NEW.id, 'queued', 'Job created', NEW.created_at);
+    INSERT INTO queue_job_event(
+        job_id,
+        status,
+        message,
+        created_at)
+    VALUES(
+        NEW.id,
+        'queued',
+        'Job created',
+        NEW.created_at);
     RETURN new;
 END;
 $$;
